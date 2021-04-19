@@ -2,6 +2,8 @@
 #include "esp_err.h"
 #include "driver/i2c.h"
 
+static int controller = I2C_NUM_0;
+
 void i2c_configure() {
     i2c_config_t config = {
         .mode = I2C_MODE_MASTER,
@@ -11,8 +13,8 @@ void i2c_configure() {
         .scl_pullup_en = GPIO_PULLUP_ENABLE,
         .master.clk_speed = 100000
     };
-    ESP_ERROR_CHECK(i2c_param_config(I2C_NUM_1, &config));
-    i2c_driver_install(I2C_NUM_1, I2C_MODE_MASTER, 128, 128, 0);
+    ESP_ERROR_CHECK(i2c_param_config(controller, &config));
+    i2c_driver_install(controller, I2C_MODE_MASTER, 128, 128, 0);
 }
 
 /*!
@@ -41,7 +43,7 @@ void delay_ms(uint32_t period_ms)
  *  @retval >0 -> Failure Info
  *
  */
-int8_t i2c_reg_write(uint8_t i2c_addr, uint8_t reg_addr, uint8_t *reg_data, uint16_t length)
+int8_t i2c_bmp_reg_write(uint8_t i2c_addr, uint8_t reg_addr, uint8_t *reg_data, uint16_t length)
 {
     esp_err_t err;
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
@@ -53,7 +55,7 @@ int8_t i2c_reg_write(uint8_t i2c_addr, uint8_t reg_addr, uint8_t *reg_data, uint
     i2c_master_write(cmd, reg_data, length, true);
     i2c_master_stop(cmd);
 
-    err = i2c_master_cmd_begin(I2C_NUM_1, cmd, 200 / portTICK_RATE_MS);
+    err = i2c_master_cmd_begin(controller, cmd, 200 / portTICK_RATE_MS);
 
     return err;
 }
@@ -71,7 +73,7 @@ int8_t i2c_reg_write(uint8_t i2c_addr, uint8_t reg_addr, uint8_t *reg_data, uint
  *  @retval >0 -> Failure Info
  *
  */
-int8_t i2c_reg_read(uint8_t i2c_addr, uint8_t reg_addr, uint8_t *reg_data, uint16_t length)
+int8_t i2c_bmp_reg_read(uint8_t i2c_addr, uint8_t reg_addr, uint8_t *reg_data, uint16_t length)
 {
     esp_err_t err;
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
@@ -86,7 +88,15 @@ int8_t i2c_reg_read(uint8_t i2c_addr, uint8_t reg_addr, uint8_t *reg_data, uint1
     i2c_master_read(cmd, reg_data, length, I2C_MASTER_LAST_NACK);
     i2c_master_stop(cmd);
 
-    err = i2c_master_cmd_begin(I2C_NUM_1, cmd, 200 / portTICK_RATE_MS);
+    err = i2c_master_cmd_begin(controller, cmd, 200 / portTICK_RATE_MS);
 
     return err;
+}
+
+void i2c_set_controller(int c) {
+    controller = c;
+}
+
+int i2c_get_controller() {
+    return controller;
 }
