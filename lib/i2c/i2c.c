@@ -3,6 +3,7 @@
 #include "driver/i2c.h"
 
 static int controller = I2C_NUM_0;
+SemaphoreHandle_t i2c_mutex = NULL;
 
 void i2c_configure() {
     i2c_config_t config = {
@@ -15,6 +16,11 @@ void i2c_configure() {
     };
     ESP_ERROR_CHECK(i2c_param_config(controller, &config));
     i2c_driver_install(controller, I2C_MODE_MASTER, 128, 128, 0);
+
+    if(!i2c_mutex) {
+        i2c_mutex = xSemaphoreCreateMutex();
+        xSemaphoreGive(i2c_mutex);
+    }
 }
 
 /*!
@@ -48,14 +54,16 @@ int8_t i2c_bmp_reg_write(uint8_t i2c_addr, uint8_t reg_addr, uint8_t *reg_data, 
     esp_err_t err;
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     
-    //  Write pointer to register (it'll be read in the next transaction)
+    xSemaphoreTake(i2c_mutex, 1000 / portTICK_RATE_MS);
     i2c_master_start(cmd);
     i2c_master_write_byte(cmd, (i2c_addr << 1 | I2C_MASTER_WRITE), true);
     i2c_master_write_byte(cmd, reg_addr, true);
     i2c_master_write(cmd, reg_data, length, true);
     i2c_master_stop(cmd);
 
-    err = i2c_master_cmd_begin(controller, cmd, 200 / portTICK_RATE_MS);
+    err = i2c_master_cmd_begin(controller, cmd, 1000 / portTICK_RATE_MS);
+
+    xSemaphoreGive(i2c_mutex);
 
     return err;
 }
@@ -78,6 +86,8 @@ int8_t i2c_bmp_reg_read(uint8_t i2c_addr, uint8_t reg_addr, uint8_t *reg_data, u
     esp_err_t err;
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     
+    xSemaphoreTake(i2c_mutex, 1000 / portTICK_RATE_MS);
+
     //  Write pointer to register (it'll be read in the next transaction)
     i2c_master_start(cmd);
     i2c_master_write_byte(cmd, (i2c_addr << 1 | I2C_MASTER_WRITE), true);
@@ -88,7 +98,9 @@ int8_t i2c_bmp_reg_read(uint8_t i2c_addr, uint8_t reg_addr, uint8_t *reg_data, u
     i2c_master_read(cmd, reg_data, length, I2C_MASTER_LAST_NACK);
     i2c_master_stop(cmd);
 
-    err = i2c_master_cmd_begin(controller, cmd, 200 / portTICK_RATE_MS);
+    err = i2c_master_cmd_begin(controller, cmd, 1000 / portTICK_RATE_MS);
+
+    xSemaphoreGive(i2c_mutex);
 
     return err;
 }
