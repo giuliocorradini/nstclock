@@ -13,6 +13,12 @@
 #include "i2c.h"
 #include "bmp280.h"
 
+struct bmp280_measure {
+    double temperature;
+    double pressure;
+};
+QueueHandle_t bmp280_queue;
+
 void bmp_delay_ms(uint32_t ms) {
     vTaskDelay(ms / portTICK_RATE_MS);
 }
@@ -45,13 +51,21 @@ void bmp280_task(void *pvParameter) {
 
     rslt = bmp280_set_power_mode(BMP280_NORMAL_MODE, &bmp);
 
-    double temp;
-    double pres;
-
+    double temp, pres;
     while(true) {
         rslt = bmp280_get_uncomp_data(&ucomp_data, &bmp);
+
         rslt = bmp280_get_comp_temp_double(&temp, ucomp_data.uncomp_temp, &bmp);
         rslt = bmp280_get_comp_pres_double(&pres, ucomp_data.uncomp_press, &bmp);
+
+        struct bmp280_measure measure = {
+            .temperature = temp,
+            .pressure = pres
+        };
+        
+        xQueueSend(bmp280_queue,
+            &measure,
+            100 / portTICK_RATE_MS);
 
         printf("Temperature: %.2f, pressure: %.1f\n",
                temp,
@@ -64,19 +78,38 @@ void bmp280_task(void *pvParameter) {
 }
 
 void app_main() {
+    i2c_mutex = xSemaphoreCreateMutex();
+    xSemaphoreGive(i2c_mutex);
+
     ssd1306_platform_i2cConfig_t cfg = {
         .sda = 21,
         .scl = 22
     };
-    ssd1306_platform_i2cInit(I2C_NUM_0, 0, &cfg);
+    ssd1306_platform_i2cInit(I2C_NUM_1, 0, &cfg);
 
     ssd1306_setFixedFont(ssd1306xled_font6x8);
-    ssd1306_128x64_i2c_init();
+    I2C_MUTEX(ssd1306_128x64_i2c_init());
 
-    ssd1306_clearScreen();
+    I2C_MUTEX(ssd1306_clearScreen());
 
-    ssd1306_print("OpenWisar");
+    I2C_MUTEX(ssd1306_print("OpenWisar"));
 
+    i2c_set_controller(I2C_NUM_1);
+    bmp280_queue = xQueueCreate(10, sizeof(struct bmp280_measure));
     xTaskCreate(bmp280_task, "bmp280", 4096, NULL, 6, NULL);
+
+    char t_string[6];
+    char p_string[16];
+    struct bmp280_measure measure;
+
+    while(true) {
+        if(xQueueReceive(bmp280_queue, &measure, 1100 / portTICK_RATE_MS) == pdTRUE) {
+            sprintf(t_string, "%.1f", measure.temperature);
+            sprintf(p_string, "%.1f", measure.pressure);
+
+            I2C_MUTEX(ssd1306_printFixed(0, 16, t_string, STYLE_NORMAL));
+            I2C_MUTEX(ssd1306_printFixed(64, 16, p_string, STYLE_NORMAL));
+        }
+    }
 
 }
