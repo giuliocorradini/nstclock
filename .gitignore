@@ -1,2 +1,5 @@
 .pio
 .vscode
+fonts/*.ttf
+font/*.h
+venv
