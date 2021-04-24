@@ -106,7 +106,7 @@ void app_main() {
     };
     ssd1306_platform_i2cInit(I2C_NUM_1, 0, &cfg);
 
-    ssd1306_setFixedFont(ssd1306xled_font6x8);
+    ssd1306_setFreeFont(free_calibri11x12);
     I2C_MUTEX(ssd1306_128x64_i2c_init());
 
     I2C_MUTEX(ssd1306_clearScreen());
