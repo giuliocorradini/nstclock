@@ -10,6 +10,8 @@ the provided script:
 - radiospacebitmap.ttf by Daniel Zarodozny from www.iconian.com
 - Mario-Kart-DS.ttf
 
+Any dash in the filename is removed before conversion.
+
 Make sure you initiated `git submodule` and downloaded the ssd1306 library in the
 components directory.
 
