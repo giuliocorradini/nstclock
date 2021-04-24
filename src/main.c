@@ -3,6 +3,7 @@
  */
 
 #include <stdio.h>
+#include <time.h>
 
 #include "driver/gpio.h"
 
@@ -77,6 +78,24 @@ void bmp280_task(void *pvParameter) {
     vTaskDelete(NULL);
 }
 
+
+void clock_task(void *pvParameter) {
+    time_t now = 1618857352;
+    char timestamp[16];
+
+    setenv("TZ", "CET-1CEST-2,M3.5.0/02:00:00,M10.5.0/03:00:00", 1);
+    tzset();
+
+    while(true) {
+        strftime(timestamp, 16, "%H:%M:%S", localtime(&now));
+        I2C_MUTEX(ssd1306_printFixed(79, 0, timestamp, STYLE_NORMAL));
+        now++;
+        vTaskDelay(1000 / portTICK_RATE_MS);
+    }
+
+    vTaskDelete(NULL);
+}
+
 void app_main() {
     i2c_mutex = xSemaphoreCreateMutex();
     xSemaphoreGive(i2c_mutex);
@@ -97,6 +116,8 @@ void app_main() {
     i2c_set_controller(I2C_NUM_1);
     bmp280_queue = xQueueCreate(10, sizeof(struct bmp280_measure));
     xTaskCreate(bmp280_task, "bmp280", 4096, NULL, 6, NULL);
+
+    xTaskCreate(clock_task, "clock", 2048, NULL, 3, NULL);
 
     char t_string[6];
     char p_string[16];
