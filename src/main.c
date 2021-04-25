@@ -80,7 +80,7 @@ void bmp280_task(void *pvParameter) {
 
 
 void clock_task(void *pvParameter) {
-    time_t now = 1618857352;
+    time_t now = *(int *)pvParameter;
     char timestamp[16];
 
     setenv("TZ", "CET-1CEST-2,M3.5.0/02:00:00,M10.5.0/03:00:00", 1);
@@ -117,7 +117,17 @@ void app_main() {
     bmp280_queue = xQueueCreate(10, sizeof(struct bmp280_measure));
     xTaskCreate(bmp280_task, "bmp280", 4096, NULL, 6, NULL);
 
-    xTaskCreate(clock_task, "clock", 2048, NULL, 3, NULL);
+    int current_time;
+    char timestamp[50];
+    char c = 0x00;
+    int i = 0;
+    while(i<50 && c != '\n') {
+        if((c = getchar()) != 0xff) {
+            timestamp[i++] = c;
+        }
+    }
+    sscanf(timestamp, "%d", &current_time);
+    xTaskCreate(clock_task, "clock", 2048, &current_time, 3, NULL);
 
     char t_string[6];
     char p_string[16];
