@@ -11,6 +11,8 @@ const char *config_menu_items[] = {
     "Exit"
 };
 
+bool config_menu_showing = false;
+
 void config_menu_init() {
     ssd1306_createMenu(&config_menu, config_menu_items, sizeof(config_menu_items) / sizeof(char *));
 }

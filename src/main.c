@@ -100,6 +100,28 @@ void clock_task(void *pvParameter) {
     vTaskDelete(NULL);
 }
 
+void short_press() {
+    if(config_menu_showing) {
+        struct menu_event down = {.cause = BUTTON_DOWN};
+        config_menu_callback(&down);
+    } else {
+        I2C_MUTEX(ssd1306_clearScreen());
+        I2C_MUTEX(ssd1306_showMenu(&config_menu));
+        config_menu_showing = true;
+    }
+}
+
+void long_press() {
+    if(config_menu_showing) {
+        struct menu_event enter = {.cause = BUTTON_ENTER};
+        config_menu_callback(&enter);
+    } else {
+        I2C_MUTEX(ssd1306_clearScreen());
+        I2C_MUTEX(ssd1306_showMenu(&config_menu));
+        config_menu_showing = true;
+    }
+}
+
 void button_fsm(void *pvParameters){
     //Configure GPIO interrupt
     gpio_pad_select_gpio(0);
@@ -119,8 +141,7 @@ void button_fsm(void *pvParameters){
             case 1: //pressed
                 if(!button_pressed) {
                     fsm_status = 0;
-                    struct menu_event down = {.cause = BUTTON_DOWN};
-                    config_menu_callback(&down);
+                    short_press();
                 } else {
                     fsm_status = 2;
                 }
@@ -128,16 +149,14 @@ void button_fsm(void *pvParameters){
             case 2: //pressed for more than 500ms
                 if(!button_pressed) {
                     fsm_status = 0;
-                    struct menu_event down = {.cause = BUTTON_DOWN};
-                    config_menu_callback(&down);
+                    short_press();
                 } else {
                     fsm_status = 3;
                 }
                 break;
             case 3:
                 if(!button_pressed) {
-                    struct menu_event enter = {.cause = BUTTON_ENTER};
-                    config_menu_callback(&enter);
+                    long_press();
                     fsm_status = 0;
                 }
                 break;
@@ -165,6 +184,7 @@ void app_main() {
     I2C_MUTEX(ssd1306_clearScreen());
 
     I2C_MUTEX(ssd1306_print("OpenWisar"));
+    I2C_MUTEX(ssd1306_printFixed(0, 16, "Waiting for timestamp on serial", STYLE_NORMAL));
 
     i2c_set_controller(I2C_NUM_1);
     bmp280_queue = xQueueCreate(10, sizeof(struct bmp280_measure));
@@ -181,15 +201,20 @@ void app_main() {
     }
     sscanf(timestamp, "%d", &current_time);
     xTaskCreate(clock_task, "clock", 2048, &current_time, 3, NULL);
+    I2C_MUTEX(ssd1306_clearScreen());
+    I2C_MUTEX(ssd1306_printFixed(0, 0, "OpenWisar", STYLE_NORMAL));
 
-    xTaskCreate(button_fsm, "menu_button", 2048, NULL, 3, NULL);
+    xTaskCreate(button_fsm, "menu_button", 2048, NULL, 7, NULL);
+    config_menu_init();
 
     char t_string[6];
     char p_string[16];
     struct bmp280_measure measure;
 
     while(true) {
-        if(xQueueReceive(bmp280_queue, &measure, 1100 / portTICK_RATE_MS) == pdTRUE) {
+        if(config_menu_showing) {
+            vTaskDelay(100 / portTICK_RATE_MS);
+        } else if(xQueueReceive(bmp280_queue, &measure, 1100 / portTICK_RATE_MS) == pdTRUE) {
             sprintf(t_string, "%.1f", measure.temperature);
             sprintf(p_string, "%.1f", measure.pressure);
 
