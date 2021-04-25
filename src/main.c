@@ -14,6 +14,9 @@
 #include "i2c.h"
 #include "bmp280.h"
 
+#include "config_menu.h"
+#include "driver/gpio.h"
+
 struct bmp280_measure {
     double temperature;
     double pressure;
@@ -64,9 +67,10 @@ void bmp280_task(void *pvParameter) {
             .pressure = pres
         };
         
-        xQueueSend(bmp280_queue,
-            &measure,
-            100 / portTICK_RATE_MS);
+        if(xQueueSend(bmp280_queue, &measure, 100 / portTICK_RATE_MS) == errQUEUE_FULL) {
+            xQueueReset(bmp280_queue);
+            xQueueSend(bmp280_queue, &measure, 100 / portTICK_RATE_MS);
+        }
 
         printf("Temperature: %.2f, pressure: %.1f\n",
                temp,
@@ -91,6 +95,55 @@ void clock_task(void *pvParameter) {
         I2C_MUTEX(ssd1306_printFixed(79, 0, timestamp, STYLE_NORMAL));
         now++;
         vTaskDelay(1000 / portTICK_RATE_MS);
+    }
+
+    vTaskDelete(NULL);
+}
+
+void button_fsm(void *pvParameters){
+    //Configure GPIO interrupt
+    gpio_pad_select_gpio(0);
+    gpio_set_direction(0, GPIO_MODE_INPUT);
+
+    static int fsm_status = 0;
+
+    while(true) {
+        bool button_pressed = (gpio_get_level(0) == 0);
+
+        switch(fsm_status) {
+            case 0: //not pressed
+                if(button_pressed) {
+                    fsm_status = 1;
+                }
+                break;
+            case 1: //pressed
+                if(!button_pressed) {
+                    fsm_status = 0;
+                    struct menu_event down = {.cause = BUTTON_DOWN};
+                    config_menu_callback(&down);
+                } else {
+                    fsm_status = 2;
+                }
+                break;
+            case 2: //pressed for more than 500ms
+                if(!button_pressed) {
+                    fsm_status = 0;
+                    struct menu_event down = {.cause = BUTTON_DOWN};
+                    config_menu_callback(&down);
+                } else {
+                    fsm_status = 3;
+                }
+                break;
+            case 3:
+                if(!button_pressed) {
+                    struct menu_event enter = {.cause = BUTTON_ENTER};
+                    config_menu_callback(&enter);
+                    fsm_status = 0;
+                }
+                break;
+        }
+
+        vTaskDelay((fsm_status == 1 ? 500 : 10) / portTICK_RATE_MS);
     }
 
     vTaskDelete(NULL);
@@ -128,6 +181,8 @@ void app_main() {
     }
     sscanf(timestamp, "%d", &current_time);
     xTaskCreate(clock_task, "clock", 2048, &current_time, 3, NULL);
+
+    xTaskCreate(button_fsm, "menu_button", 2048, NULL, 3, NULL);
 
     char t_string[6];
     char p_string[16];
