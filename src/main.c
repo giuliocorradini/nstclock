@@ -20,31 +20,33 @@
 #include "config_menu.h"
 #include "driver/gpio.h"
 
+#include "AnimalCrossingWildWorld.h"
+#include "big_AnimalCrossingWildWorld.h"
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
+
 SemaphoreHandle_t display_lock;
 #define DISPLAY_LOCK(func)  xSemaphoreTake(display_lock, 100 / portTICK_RATE_MS);\
                             func;\
                             xSemaphoreGive(display_lock);
+
+EventGroupHandle_t button_event;
+enum fsm_interthread_event_t {
+    EVENT_SHORT_PRESS   = (1<<0),
+    EVENT_LONG_PRESS    = (1<<1)
+};
 
 void show_menu() {
     config_menu_showing = true;
 }
 
 void short_press() {
-    if(config_menu_showing) {
-        struct menu_event down = {.cause = BUTTON_DOWN};
-        config_menu_callback(&down);
-    } else {
-        show_menu();
-    }
+    xEventGroupSetBits(button_event, EVENT_SHORT_PRESS);
 }
 
 void long_press() {
-    if(config_menu_showing) {
-        struct menu_event enter = {.cause = BUTTON_ENTER};
-        config_menu_callback(&enter);
-    } else {
-        show_menu();
-    }
+    xEventGroupSetBits(button_event, EVENT_LONG_PRESS);
 }
 
 void button_fsm(void *pvParameters){
@@ -96,7 +98,9 @@ void button_fsm(void *pvParameters){
 enum showing {
     SHOWING_WEATHER,
     SHOWING_CONFIG_MENU,
-    SHOWING_CONFIG_MENU_UPDATE_LOOP
+    SHOWING_CONFIG_MENU_UPDATE_LOOP,
+    SHOWING_TEMPERATURE,
+    SHOWING_PRESSURE
 };
 
 void app_main() {
@@ -106,13 +110,15 @@ void app_main() {
     display_lock = xSemaphoreCreateMutex();
     xSemaphoreGive(display_lock);
 
+    button_event = xEventGroupCreate();
+
     ssd1306_platform_i2cConfig_t cfg = {
         .sda = 21,
         .scl = 22
     };
     ssd1306_platform_i2cInit(I2C_NUM_1, 0, &cfg);
 
-    ssd1306_setFreeFont(free_calibri11x12);
+    ssd1306_setFreeFont(free_AnimalCrossingWildWorld9x12);
     I2C_MUTEX(ssd1306_128x64_i2c_init());
 
     I2C_MUTEX(ssd1306_clearScreen());
@@ -146,6 +152,7 @@ void app_main() {
     struct bmp280_measure measure;
 
     int showing = SHOWING_WEATHER;
+    int button_event_bits;
 
     while(true) {
 
@@ -154,6 +161,7 @@ void app_main() {
 
         switch(showing) {
             case SHOWING_WEATHER:
+                ssd1306_setFreeFont(free_AnimalCrossingWildWorld9x12);
                 
                 if(xQueueReceive(clock_current_time, &now, 0)) {    
                     strftime(timestamp, 16, "%H:%M:%S", localtime(&now));
@@ -168,8 +176,15 @@ void app_main() {
                     I2C_MUTEX(ssd1306_printFixed(64, 16, p_string, STYLE_NORMAL));
                 }
 
-                if(config_menu_showing) {
-                    showing = SHOWING_CONFIG_MENU;
+                if((button_event_bits = xEventGroupGetBits(button_event))) {
+                    xEventGroupClearBits(button_event, button_event_bits);
+                    if(button_event_bits & EVENT_SHORT_PRESS) {
+                        showing = SHOWING_TEMPERATURE;
+                        ssd1306_clearBlock(0, 2, 128, 48);
+                    }
+                    if (button_event_bits & EVENT_LONG_PRESS) {
+                        showing = SHOWING_CONFIG_MENU;
+                    }
                 }
                 break;
 
@@ -180,13 +195,64 @@ void app_main() {
                 break;
 
             case SHOWING_CONFIG_MENU_UPDATE_LOOP:
+                if((button_event_bits = xEventGroupGetBits(button_event))) {
+                    xEventGroupClearBits(button_event, button_event_bits);
+                    if(button_event_bits & EVENT_SHORT_PRESS) {
+                        struct menu_event down = {.cause = BUTTON_DOWN};
+                        config_menu_callback(&down);
+                    }
+                    if (button_event_bits & EVENT_LONG_PRESS) {
+                        struct menu_event enter = {.cause = BUTTON_ENTER};
+                        config_menu_callback(&enter);
+                    }
+                }
+                break;
+
+            case SHOWING_TEMPERATURE:
+                ssd1306_setFreeFont(free_big_AnimalCrossingWildWorld16x21);
+                if(xQueueReceive(bmp280_queue, &measure, 50 / portTICK_RATE_MS) == pdTRUE) {
+                    sprintf(t_string, "%.1f", measure.temperature);
+
+                    I2C_MUTEX(ssd1306_printFixed(0, 16, t_string, STYLE_NORMAL));
+                    I2C_MUTEX(ssd1306_printFixed(80, 16, "°C", STYLE_NORMAL));
+                }
+                if((button_event_bits = xEventGroupGetBits(button_event))) {
+                    xEventGroupClearBits(button_event, button_event_bits);
+                    if(button_event_bits & EVENT_SHORT_PRESS) {
+                        showing = SHOWING_PRESSURE;
+                        ssd1306_clearBlock(0, 2, 128, 48);
+                    }
+                    if (button_event_bits & EVENT_LONG_PRESS) {
+                        showing = SHOWING_CONFIG_MENU;
+                    }
+                }
+                break;
+
+            case SHOWING_PRESSURE:
+                ssd1306_setFreeFont(free_big_AnimalCrossingWildWorld16x21);
+                if(xQueueReceive(bmp280_queue, &measure, 50 / portTICK_RATE_MS) == pdTRUE) {
+                    sprintf(p_string, "%.1f", measure.pressure);
+
+                    I2C_MUTEX(ssd1306_printFixed(0, 16, p_string, STYLE_NORMAL));
+                    I2C_MUTEX(ssd1306_printFixed(80, 16, "Pa", STYLE_NORMAL));
+                }
+                if((button_event_bits = xEventGroupGetBits(button_event))) {
+                    xEventGroupClearBits(button_event, button_event_bits);
+                    if(button_event_bits & EVENT_SHORT_PRESS) {
+                        showing = SHOWING_WEATHER;
+                        ssd1306_clearBlock(0, 2, 128, 48);
+                    }
+                    if (button_event_bits & EVENT_LONG_PRESS) {
+                        showing = SHOWING_CONFIG_MENU;
+                    }
+                }
                 break;
 
             default:
                 break;
         }
 
-        vTaskDelay(20 / portTICK_RATE_MS);
+        vTaskDelay(10 / portTICK_RATE_MS);
     }
 
 }
