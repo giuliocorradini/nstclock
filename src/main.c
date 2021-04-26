@@ -30,13 +30,12 @@ void show_menu() {
 }
 
 void short_press() {
-    DISPLAY_LOCK(
     if(config_menu_showing) {
         struct menu_event down = {.cause = BUTTON_DOWN};
         config_menu_callback(&down);
     } else {
         show_menu();
-    });
+    }
 }
 
 void long_press() {
@@ -97,6 +96,7 @@ void button_fsm(void *pvParameters){
 enum showing {
     SHOWING_WEATHER,
     SHOWING_CONFIG_MENU,
+    SHOWING_CONFIG_MENU_UPDATE_LOOP
 };
 
 void app_main() {
@@ -136,7 +136,7 @@ void app_main() {
     sscanf(timestamp, "%d", &current_time);
     xTaskCreate(clock_task, "clock", 2048, &current_time, 3, NULL);
     I2C_MUTEX(ssd1306_clearScreen());
-    I2C_MUTEX(ssd1306_printFixed(0, 0, "WeatherStation", STYLE_NORMAL));
+    I2C_MUTEX(ssd1306_printFixed(0, 0, "MeteoStation", STYLE_NORMAL));
 
     xTaskCreate(button_fsm, "menu_button", 2048, NULL, 7, NULL);
     config_menu_init();
@@ -149,23 +149,39 @@ void app_main() {
 
     while(true) {
 
+        time_t now;
+        char timestamp[16];
+
         switch(showing) {
             case SHOWING_WEATHER:
-                if(xQueueReceive(bmp280_queue, &measure, 1100 / portTICK_RATE_MS) == pdTRUE) {
+                
+                if(xQueueReceive(clock_current_time, &now, 0)) {    
+                    strftime(timestamp, 16, "%H:%M:%S", localtime(&now));
+                    I2C_MUTEX(ssd1306_printFixed(79, 0, timestamp, STYLE_NORMAL));
+                }
+
+                if(xQueueReceive(bmp280_queue, &measure, 50 / portTICK_RATE_MS) == pdTRUE) {
                     sprintf(t_string, "%.1f", measure.temperature);
                     sprintf(p_string, "%.1f", measure.pressure);
 
                     I2C_MUTEX(ssd1306_printFixed(0, 16, t_string, STYLE_NORMAL));
                     I2C_MUTEX(ssd1306_printFixed(64, 16, p_string, STYLE_NORMAL));
                 }
+
                 if(config_menu_showing) {
                     showing = SHOWING_CONFIG_MENU;
                 }
                 break;
+
             case SHOWING_CONFIG_MENU:
                 I2C_MUTEX(ssd1306_clearScreen());
                 I2C_MUTEX(ssd1306_showMenu(&config_menu));
+                showing = SHOWING_CONFIG_MENU_UPDATE_LOOP;
                 break;
+
+            case SHOWING_CONFIG_MENU_UPDATE_LOOP:
+                break;
+
             default:
                 break;
         }
