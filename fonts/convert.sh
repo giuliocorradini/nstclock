@@ -49,8 +49,8 @@ function convert_ttf {
 
 function generate_fonts_header {
     cd lib/fonts
-    rm fonts.h
-    echo > fonts
+
+    echo "#include \"fonts.h\"" > fonts
     for font in $(ls *.h); do
         echo "#include \"$font\"" >> fonts
     done
@@ -60,18 +60,22 @@ function generate_fonts_header {
     # Generate font list name
     echo "const char *available_fonts_names[] = {" >> fonts
         for font in $(ls *.h); do
-            echo "\"$(basename $font .h)\"," >> fonts
+            if [[ "$font" != "fonts.h" ]]; then
+                echo "\"$(basename $font .h)\"," >> fonts
+            fi
         done
     echo -e "};\n" >> fonts
 
     # Generate font list name
     echo "const char *available_fonts[] = {" >> fonts
         for font in $(ls *.h); do
-            echo "$(head -n1 $font | perl -lne 'print $1 if /(\w+(?=\[\]))/')," >> fonts
+            if [[ "$font" != "fonts.h" ]]; then
+                echo "$(head -n1 $font | perl -lne 'print $1 if /(\w+(?=\[\]))/')," >> fonts
+            fi
         done
     echo -e "};\n" >> fonts
 
-    mv fonts fonts.h
+    mv fonts fonts.c
 
     cd ../..
 }
