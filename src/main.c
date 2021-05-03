@@ -214,7 +214,7 @@ void app_main() {
                     sprintf(t_string, "%.1f", measure.temperature);
 
                     I2C_MUTEX(ssd1306_printFixed(0, 16, t_string, STYLE_NORMAL));
-                    I2C_MUTEX(ssd1306_printFixed(80, 16, "°C", STYLE_NORMAL));
+                    I2C_MUTEX(ssd1306_printFixed(80, 16, "C", STYLE_NORMAL));
                 }
                 if((button_event_bits = xEventGroupGetBits(button_event))) {
                     xEventGroupClearBits(button_event, button_event_bits);
