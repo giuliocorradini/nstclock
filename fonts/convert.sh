@@ -47,6 +47,35 @@ function convert_ttf {
     done
 }
 
+function generate_fonts_header {
+    cd lib/fonts
+    rm fonts.h
+    echo > fonts
+    for font in $(ls *.h); do
+        echo "#include \"$font\"" >> fonts
+    done
+
+    echo -e "\n\n" >> fonts
+
+    # Generate font list name
+    echo "const char *available_fonts_names[] = {" >> fonts
+        for font in $(ls *.h); do
+            echo "\"$(basename $font .h)\"," >> fonts
+        done
+    echo -e "};\n" >> fonts
+
+    # Generate font list name
+    echo "const char *available_fonts[] = {" >> fonts
+        for font in $(ls *.h); do
+            echo "$(head -n1 $font | perl -lne 'print $1 if /(\w+(?=\[\]))/')," >> fonts
+        done
+    echo -e "};\n" >> fonts
+
+    mv fonts fonts.h
+
+    cd ../..
+}
+
 if [[ "$VIRTUAL_ENV" == "" ]]; then
     activate_venv
 fi
@@ -57,6 +86,7 @@ fi
 
 clean_dashes
 convert_ttf
+generate_fonts_header
 
 if [[ "$1" == "--bigfonts" ]]; then
     clean_big
